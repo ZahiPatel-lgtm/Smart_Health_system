@@ -293,7 +293,9 @@ body { font-family: 'Inter', sans-serif; background: var(--gray-50); color: var(
 /* ===== CHARTS ===== */
 .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
 .chart-card { background: #fff; border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--gray-100); }
-.chart-card.wide { }
+.chart-card.wide {
+    grid-column: span 2;
+ }
 .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .chart-header h3 { font-size: .95rem; font-weight: 700; color: var(--gray-800); }
 .chart-legend { display: flex; align-items: center; gap: 14px; font-size: .78rem; color: var(--gray-500); }
