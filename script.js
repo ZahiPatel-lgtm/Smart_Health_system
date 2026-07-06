@@ -1,30 +1,18 @@
-/* =====================================================
-   Smart Health AI — script.js  (fully dynamic)
-   Each user/hospital uploads their own CSVs.
-   Data is stored per-user in localStorage.
-   ===================================================== */
+const SUPABASE_URL      = "https://awvwbktynboirvkmbybl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_aLaPe2rM6fDNdGXWbQKd6A_ls0loWS4";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ─── Auth Keys ───────────────────────────────────────
-const USERS_KEY   = "sha_users";
-const SESSION_KEY = "sha_session";
+let currentUser = null; // { id, email, name, hospital, initials } — set after sign-in
 
-function getUsers()     { return JSON.parse(localStorage.getItem(USERS_KEY) || "[]"); }
-function saveUsers(u)   { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
-function getSession()   { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }
-function saveSession(u) { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); }
-function clearSession() { localStorage.removeItem(SESSION_KEY); }
-
-// Per-user data key
-function dataKey(email) { return "sha_data_" + (email || "guest"); }
+// Per-user data key (still localStorage-backed, keyed by Supabase user id)
+function dataKey(userId) { return "sha_data_" + (userId || "guest"); }
 function getUserData()  {
-  const s = getSession();
-  if (!s) return null;
-  return JSON.parse(localStorage.getItem(dataKey(s.email || s.username)) || "null");
+  if (!currentUser) return null;
+  return JSON.parse(localStorage.getItem(dataKey(currentUser.id)) || "null");
 }
 function saveUserData(d) {
-  const s = getSession();
-  if (!s) return;
-  localStorage.setItem(dataKey(s.email || s.username), JSON.stringify(d));
+  if (!currentUser) return;
+  localStorage.setItem(dataKey(currentUser.id), JSON.stringify(d));
 }
 
 // ─── Page Fade In ────────────────────────────────────
@@ -45,11 +33,16 @@ if (rememberEl) {
   });
 }
 
-// ─── Auto-login ──────────────────────────────────────
-(function () {
-  const s = getSession();
-  if (s) showDashboard(s);
+// ─── Auto-login (restore existing Supabase session) ──
+(async function () {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) await loadProfileAndShowDashboard(session.user);
 })();
+
+// Keep local state in sync if the session ends elsewhere (e.g. another tab)
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") currentUser = null;
+});
 
 // ─── Tab Switching ───────────────────────────────────
 function switchTab(tab) {
@@ -72,36 +65,21 @@ function togglePassword(id, btn) {
 }
 
 // ─── Sign In ─────────────────────────────────────────
-function handleSignIn() {
-  const username = document.getElementById("signin-username").value.trim();
+async function handleSignIn() {
+  const email    = document.getElementById("signin-username").value.trim();
   const password = document.getElementById("signin-password").value;
   const errEl    = document.getElementById("signin-error");
-  if (!username || !password) { showError(errEl, "Please enter username and password."); return; }
+  if (!email || !password) { showError(errEl, "Please enter your email and password."); return; }
 
-  // Demo admin
-  if (username === "admin" && password === "admin123") {
-    completeSignIn({ username: "admin", name: "Admin User", email: "admin@sha.ai", hospital: "Demo Hospital", initials: "AU" });
-    return;
-  }
-  const users = getUsers();
-  const user = users.find(u =>
-    (u.username === username || u.email === username ||
-     (u.name && u.name.toLowerCase() === username.toLowerCase())) &&
-    u.password === password
-  );
-  if (user) completeSignIn(user);
-  else showError(errEl, "Incorrect username or password.");
-}
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) { showError(errEl, error.message); return; }
 
-function completeSignIn(user) {
-  saveSession(user);
-  if (rememberEl && rememberEl.checked)
-    localStorage.setItem("sha_rememberUser", user.username);
-  showDashboard(user);
+  if (rememberEl && rememberEl.checked) localStorage.setItem("sha_rememberUser", email);
+  await loadProfileAndShowDashboard(data.user);
 }
 
 // ─── Sign Up ─────────────────────────────────────────
-function handleSignUp() {
+async function handleSignUp() {
   const name     = document.getElementById("signup-name").value.trim();
   const hospital = document.getElementById("signup-hospital").value.trim();
   const email    = document.getElementById("signup-email").value.trim();
@@ -113,21 +91,51 @@ function handleSignUp() {
   if (!/\S+@\S+\.\S+/.test(email))   { showError(errEl, "Enter a valid email."); return; }
   if (password.length < 6)           { showError(errEl, "Password must be at least 6 characters."); return; }
 
-  const users = getUsers();
-  if (users.find(u => u.email === email)) { showError(errEl, "Account with this email already exists."); return; }
+  // name + hospital travel as user_metadata; a Postgres trigger
+  // (see supabase-schema.sql) copies them into the `profiles` table.
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name, hospital } }
+  });
+  if (error) { showError(errEl, error.message); return; }
 
-  const initials = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-  const username = email.split("@")[0];
-  const user = { username, name, hospital, email, password, initials };
-  users.push(user);
-  saveUsers(users);
-  saveSession(user);
-  showDashboard(user);
+  // If "Confirm email" is enabled in Supabase Auth settings, there's no
+  // session yet — the user must click the confirmation link first.
+  if (!data.session) {
+    showError(errEl, "Account created! Check your email to confirm before signing in.");
+    switchTab("signin");
+    return;
+  }
+  await loadProfileAndShowDashboard(data.user);
+}
+
+// ─── Load profile row + show dashboard ───────────────
+async function loadProfileAndShowDashboard(authUser) {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("name, hospital, initials")
+    .eq("id", authUser.id)
+    .single();
+
+  if (error) console.error("Failed to load profile:", error.message);
+
+  const name = profile?.name || authUser.email;
+  currentUser = {
+    id: authUser.id,
+    email: authUser.email,
+    name,
+    hospital: profile?.hospital || "Administrator",
+    initials: profile?.initials || name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+  };
+
+  showDashboard(currentUser);
 }
 
 // ─── Logout ──────────────────────────────────────────
-function handleLogout() {
-  clearSession();
+async function handleLogout() {
+  await supabase.auth.signOut();
+  currentUser = null;
   // reset chart flags
   chartsInitialized = analyticsInitialized = supplyInitialized = false;
   Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
@@ -193,8 +201,8 @@ function navTo(page) {
   if (target) target.classList.add("active");
   if (window.innerWidth <= 768) document.getElementById("sidebar").classList.remove("open");
   const titles = { overview:"Dashboard", centres:"Health Centres", analytics:"Analytics",
-                   supply:"Supply Chain", staff:"Staff", alerts:"Alerts",
-                   upload:"Upload Data", settings:"Settings" };
+                  supply:"Supply Chain", staff:"Staff", alerts:"Alerts",
+                  upload:"Upload Data", settings:"Settings" };
   document.getElementById("topbar-title").textContent = titles[page] || "Dashboard";
   // Lazy chart init for sub-pages
   if (page === "analytics") setTimeout(initAnalyticsCharts, 50);
@@ -279,8 +287,7 @@ function applyUploadedData() {
 
 function clearAllData() {
   if (!confirm("Clear all uploaded data for this account?")) return;
-  const s = getSession();
-  if (s) localStorage.removeItem(dataKey(s.email || s.username));
+  if (currentUser) localStorage.removeItem(dataKey(currentUser.id));
   Object.keys(staged).forEach(k => staged[k] = null);
   chartsInitialized = analyticsInitialized = supplyInitialized = false;
   Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
