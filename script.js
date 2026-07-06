@@ -867,11 +867,11 @@ async function callAPI(url, payload) {
 }
 
 function apiErrorMsg(url, err) {
-  const cmd = url.includes("8002") ? "uvicorn patient_footfall_api:app --port 8002"
-            : url.includes("8001") ? "uvicorn bed_occupancy_api:app --port 8001"
-            :                        "uvicorn medicine_stockout_api:app --port 8003";
-  return `Cannot reach the API. Make sure it's running:<br>
-    <code style="font-size:.78rem;font-family:monospace">${cmd} --reload</code><br><br>
+  const label = url.includes("patient-footfall-api")   ? "patient-footfall-api"
+              : url.includes("bed-occupancy-api")      ? "bed-occupancy-api"
+              : url.includes("medicine-stockout-api")  ? "medicine-stockout-api"
+              :                                          "the API";
+  return `Cannot reach ${label}.<br><br>
     Error: ${err.message}`;
 }
 
@@ -955,13 +955,13 @@ async function runUploadBatch(prefix, uploadUrl, type) {
 
   } catch (err) {
     batchEl.className = "batch-result";
-    const cmd = uploadUrl.includes("8002") ? "uvicorn patient_footfall_api:app --port 8002"
-              : uploadUrl.includes("8001") ? "uvicorn bed_occupancy_api:app --port 8001"
-              :                              "uvicorn medicine_stockout_api:app --port 8003";
+    const label = uploadUrl.includes("patient-footfall-api")   ? "patient-footfall-api"
+                : uploadUrl.includes("bed-occupancy-api")      ? "bed-occupancy-api"
+                : uploadUrl.includes("medicine-stockout-api")  ? "medicine-stockout-api"
+                :                                                "the API";
     batchEl.innerHTML = `<div class="ai-result error-result">
       <i class="fa-solid fa-circle-xmark"></i> Upload failed.<br><br>
-      Make sure the API is running:<br>
-      <code style="font-size:.78rem;font-family:monospace">${cmd} --reload</code><br><br>
+      Could not reach <strong>${label}</strong>.<br><br>
       Error: ${err.message}
     </div>`;
   } finally {
@@ -1071,7 +1071,7 @@ function downloadSingleResult(data, type) {
 // ── Entry points ─────────────────────────────────────
 function runFootfall() {
   if (csvMode.ff === "csv") {
-    runUploadBatch("ff", "http://localhost:8002/upload/footfall", "footfall");
+    runUploadBatch("ff", "https://patient-footfall-api.onrender.com/upload/footfall", "footfall");
   } else {
     const payload = {
       Patient_Count:    parseFloat(document.getElementById("ff-patient-count").value) || 0,
@@ -1086,16 +1086,16 @@ function runFootfall() {
     if (!payload.Date) { showApiError("ff-result", "Please select a date."); return; }
     showLoading("ff-result");
     setBtn("ff-btn", true);
-    callAPI("http://localhost:8002/predict/footfall", payload)
+    callAPI("https://patient-footfall-api.onrender.com/predict/footfall", payload)
       .then(d => renderSingleResult("ff-result", d, "footfall"))
-      .catch(err => showApiError("ff-result", apiErrorMsg("http://localhost:8002", err)))
+      .catch(err => showApiError("ff-result", apiErrorMsg("https://patient-footfall-api.onrender.com", err)))
       .finally(() => setBtn("ff-btn", false));
   }
 }
 
 function runBed() {
   if (csvMode.bed === "csv") {
-    runUploadBatch("bed", "http://localhost:8001/upload/bed", "bed");
+    runUploadBatch("bed", "https://bed-occupancy-api.onrender.com/upload/bed", "bed");
   } else {
     const payload = {
       Total_Beds:             parseFloat(document.getElementById("bed-total").value)      || 0,
@@ -1109,16 +1109,16 @@ function runBed() {
     if (!payload.Date) { showApiError("bed-result", "Please select a date."); return; }
     showLoading("bed-result");
     setBtn("bed-btn", true);
-    callAPI("http://localhost:8001/predict/bed", payload)
+    callAPI("https://bed-occupancy-api.onrender.com/predict/bed", payload)
       .then(d => renderSingleResult("bed-result", d, "bed"))
-      .catch(err => showApiError("bed-result", apiErrorMsg("http://localhost:8001", err)))
+      .catch(err => showApiError("bed-result", apiErrorMsg("https://bed-occupancy-api.onrender.com", err)))
       .finally(() => setBtn("bed-btn", false));
   }
 }
 
 function runStockout() {
   if (csvMode.so === "csv") {
-    runUploadBatch("so", "http://localhost:8003/upload/stockout", "stockout");
+    runUploadBatch("so", "https://medicine-stockout-api.onrender.com/upload/stockout", "stockout");
   } else {
     const payload = {
       Medicine_ID:        document.getElementById("so-medicine-id").value || "MED-001",
@@ -1134,9 +1134,9 @@ function runStockout() {
     if (!payload.Date) { showApiError("so-result", "Please select a date."); return; }
     showLoading("so-result");
     setBtn("so-btn", true);
-    callAPI("http://localhost:8003/predict/stockout", payload)
+    callAPI("https://medicine-stockout-api.onrender.com/predict/stockout", payload)
       .then(d => renderSingleResult("so-result", d, "stockout"))
-      .catch(err => showApiError("so-result", apiErrorMsg("http://localhost:8003", err)))
+      .catch(err => showApiError("so-result", apiErrorMsg("https://medicine-stockout-api.onrender.com", err)))
       .finally(() => setBtn("so-btn", false));
   }
 }
