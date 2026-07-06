@@ -1,6 +1,19 @@
+/* =====================================================
+   Smart Health AI — script.js  (fully dynamic)
+   Auth is handled by Supabase Auth (real accounts, real
+   sessions). Uploaded CSV data is still cached locally
+   per browser, keyed by the Supabase user id, until it
+   is migrated into Postgres tables in a later step.
+   ===================================================== */
+
+// ─── Supabase Client ─────────────────────────────────
+// Fill these in from your Supabase project: Project Settings → API.
+// The anon/public key is safe to ship in frontend code — access control
+// is enforced by Row Level Security policies on the database tables,
+// not by keeping this key secret. See supabase-schema.sql.
 const SUPABASE_URL      = "https://awvwbktynboirvkmbybl.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_aLaPe2rM6fDNdGXWbQKd6A_ls0loWS4";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null; // { id, email, name, hospital, initials } — set after sign-in
 
@@ -35,12 +48,12 @@ if (rememberEl) {
 
 // ─── Auto-login (restore existing Supabase session) ──
 (async function () {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await sb.auth.getSession();
   if (session) await loadProfileAndShowDashboard(session.user);
 })();
 
 // Keep local state in sync if the session ends elsewhere (e.g. another tab)
-supabase.auth.onAuthStateChange((event) => {
+sb.auth.onAuthStateChange((event) => {
   if (event === "SIGNED_OUT") currentUser = null;
 });
 
@@ -71,7 +84,7 @@ async function handleSignIn() {
   const errEl    = document.getElementById("signin-error");
   if (!email || !password) { showError(errEl, "Please enter your email and password."); return; }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) { showError(errEl, error.message); return; }
 
   if (rememberEl && rememberEl.checked) localStorage.setItem("sha_rememberUser", email);
@@ -93,7 +106,7 @@ async function handleSignUp() {
 
   // name + hospital travel as user_metadata; a Postgres trigger
   // (see supabase-schema.sql) copies them into the `profiles` table.
-  const { data, error } = await supabase.auth.signUp({
+  const { data, error } = await sb.auth.signUp({
     email,
     password,
     options: { data: { name, hospital } }
@@ -112,7 +125,7 @@ async function handleSignUp() {
 
 // ─── Load profile row + show dashboard ───────────────
 async function loadProfileAndShowDashboard(authUser) {
-  const { data: profile, error } = await supabase
+  const { data: profile, error } = await sb
     .from("profiles")
     .select("name, hospital, initials")
     .eq("id", authUser.id)
@@ -134,7 +147,7 @@ async function loadProfileAndShowDashboard(authUser) {
 
 // ─── Logout ──────────────────────────────────────────
 async function handleLogout() {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
   currentUser = null;
   // reset chart flags
   chartsInitialized = analyticsInitialized = supplyInitialized = false;
@@ -201,8 +214,8 @@ function navTo(page) {
   if (target) target.classList.add("active");
   if (window.innerWidth <= 768) document.getElementById("sidebar").classList.remove("open");
   const titles = { overview:"Dashboard", centres:"Health Centres", analytics:"Analytics",
-                  supply:"Supply Chain", staff:"Staff", alerts:"Alerts",
-                  upload:"Upload Data", settings:"Settings" };
+                   supply:"Supply Chain", staff:"Staff", alerts:"Alerts",
+                   upload:"Upload Data", settings:"Settings" };
   document.getElementById("topbar-title").textContent = titles[page] || "Dashboard";
   // Lazy chart init for sub-pages
   if (page === "analytics") setTimeout(initAnalyticsCharts, 50);
