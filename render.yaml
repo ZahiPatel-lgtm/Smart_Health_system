@@ -1,0 +1,57 @@
+services:
+  # ---- Patient Footfall Prediction API ----
+  - type: web
+    name: patient-footfall-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn patient_footfall_api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # ---- Bed Occupancy Prediction API ----
+  - type: web
+    name: bed-occupancy-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn bed_occupancy_api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # ---- Medicine Stockout Prediction API ----
+  - type: web
+    name: medicine-stockout-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn medicine_stockout_api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # ---- Static Frontend (index.html / style.css / script.js) ----
+  - type: web
+    name: smart-health-frontend
+    runtime: static
+    rootDir: .
+    buildCommand: echo "no build step required"
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
